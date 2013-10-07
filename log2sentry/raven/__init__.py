@@ -1,6 +1,6 @@
 # -*- coding: utf8 -*-
 """
-This is compatibility module with Raven client v. 3.2.1. Code is copied from
+This is compatibility package with Raven client v. 3.2.1. Code is copied from
 raven-python (https://github.com/getsentry/raven-python).
 
 raven-python is:
@@ -8,6 +8,9 @@ raven-python is:
 Copyright (c) 2009 David Cramer and individual contributors.
 All rights reserved.
 """
+
+from .serializer import transform
+from .encoding import shorten
 
 ## raven.conf.defaults
 ## ~~~~~~~~~~~~~~~~~~~
@@ -93,116 +96,6 @@ def varmap(func, var, context=None, name=None):
         ret = func(name, var)
     del context[objid]
     return ret
-
-
-## raven.utils.serializer.manager
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-##
-## :copyright: (c) 2010-2012 by the Sentry Team, see AUTHORS for more details.
-## :license: BSD, see LICENSE for more details.
-
-import logging
-from contextlib import closing
-
-__all__ = ('register', 'transform')
-
-logger = logging.getLogger('sentry.errors.serializer')
-
-
-class SerializationManager(object):
-    logger = logger
-
-    def __init__(self):
-        self.__registry = []
-        self.__serializers = {}
-
-    @property
-    def serializers(self):
-        # XXX: Would serializers ever need state that we shouldnt cache them?
-        for serializer in self.__registry:
-            yield serializer
-
-    def register(self, serializer):
-        if serializer not in self.__registry:
-            self.__registry.append(serializer)
-        return serializer
-
-
-class Serializer(object):
-    logger = logger
-
-    def __init__(self, manager):
-        self.manager = manager
-        self.context = set()
-        self.serializers = []
-        for serializer in manager.serializers:
-            self.serializers.append(serializer(self))
-
-    def close(self):
-        del self.serializers
-        del self.context
-
-    def transform(self, value, **kwargs):
-        """
-        Primary function which handles recursively transforming
-        values via their serializers
-        """
-        if value is None:
-            return None
-
-        objid = id(value)
-        if objid in self.context:
-            return '<...>'
-        self.context.add(objid)
-
-        try:
-            for serializer in self.serializers:
-                if serializer.can(value):
-                    try:
-                        return serializer.serialize(value, **kwargs)
-                    except Exception as e:
-                        logger.exception(e)
-                        return unicode(type(value))
-
-            # if all else fails, lets use the repr of the object
-            try:
-                return self.transform(repr(value), **kwargs)
-            except Exception as e:
-                logger.exception(e)
-                # It's common case that a model's __unicode__ definition may try to query the database
-                # which if it was not cleaned up correctly, would hit a transaction aborted exception
-                return unicode(type(value))
-        finally:
-            self.context.remove(objid)
-
-
-manager = SerializationManager()
-register = manager.register
-
-
-def transform(value, manager=manager, **kwargs):
-    with closing(Serializer(manager)) as serializer:
-        return serializer.transform(value, **kwargs)
-
-
-## raven.utils.encoding
-## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-##
-## :copyright: (c) 2010-2012 by the Sentry Team, see AUTHORS for more details.
-## :license: BSD, see LICENSE for more details.
-
-def shorten(var, list_length=50, string_length=200):
-    #from raven.utils.serializer import transform
-
-    var = transform(var)
-    if isinstance(var, basestring) and len(var) > string_length:
-        var = var[:string_length] + '...'
-    elif isinstance(var, (list, tuple, set, frozenset)) and len(var) > list_length:
-        # TODO: we should write a real API for storing some metadata with vars when
-        # we get around to doing ref storage
-        # TODO: when we finish the above, we should also implement this for dicts
-        var = list(var)[:list_length] + ['...', '(%d more elements)' % (len(var) - list_length,)]
-    return var
 
 
 ## raven.utils.stacks
