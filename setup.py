@@ -8,7 +8,7 @@ setup(
     packages=['log2sentry',
               'log2sentry.raven',
               'log2sentry.raven.serializer'],
-    version='0.1',
+    version='0.2',
     author='Jakub Matys',
     author_email='matys.jakub@gmail.com',
     url='https://github.com/jakm/log2sentry',
