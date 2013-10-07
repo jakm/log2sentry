@@ -5,7 +5,9 @@ from setuptools import setup
 
 setup(
     name='log2sentry',
-    packages=['log2sentry'],
+    packages=['log2sentry',
+              'log2sentry.raven',
+              'log2sentry.raven.serializer'],
     version='0.1',
     author='Jakub Matys',
     author_email='matys.jakub@gmail.com',
