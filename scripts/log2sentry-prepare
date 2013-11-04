@@ -13,6 +13,7 @@ Options:
   -h, --help         show this help message and exit
   --preserve-backup  preserve temporary backup file
   --prefix=PREFIX    use PREFIX for generated files [default is basename]
+  --out-dir=DIR      use DIR as working and target directory
 
 ------------
 
@@ -51,7 +52,7 @@ def main():
 
             for logfile in logfiles:
                 try:
-                    temp_file, target_pattern = get_filenames(logfile, opts.prefix)
+                    temp_file, target_pattern = get_filenames(logfile, opts)
                     shutil.move(logfile, temp_file)
 
                     transcode_log(temp_file, target_pattern,
@@ -75,6 +76,8 @@ def parse_args():
                       help='preserve temporary backup file')
     parser.add_option('', '--prefix', dest='prefix', metavar='PREFIX',
                       help='use PREFIX for generated files [default is basename]')
+    parser.add_option('', '--out-dir', dest='out_dir', metavar='DIR',
+                      help='use DIR as working and target directory')
 
     opts, args = parser.parse_args()
 
@@ -107,11 +110,15 @@ def is_json(path):
     return (ext == '.json')
 
 
-def get_filenames(path, prefix=None):
+def get_filenames(path, opts=None):
     dir_path, file_name = os.path.split(path)
     base, ext = os.path.splitext(file_name)
-    if prefix:
-        base = prefix
+
+    if opts and opts.prefix:
+        base = opts.prefix
+
+    if opts and opts.out_dir:
+        dir_path = os.path.abspath(opts.out_dir)
 
     ts = timestamp()
     temp_file = 'tmp_' + ts + ext
