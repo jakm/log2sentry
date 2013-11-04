@@ -9,4 +9,9 @@ raven-python (https://github.com/getsentry/raven-python) projects.
 
 from .log2json import Log2Json
 
-__all__ = ('Log2Json')
+try:
+    VERSION = __import__('pkg_resources').get_distribution('log2sentry').version
+except Exception as e:
+    VERSION = 'unknown'
+
+__all__ = ('VERSION', 'Log2Json')
