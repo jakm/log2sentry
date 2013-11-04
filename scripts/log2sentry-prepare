@@ -1,0 +1,177 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+"""
+Prepare logs formated by log2sentry to send via curl. Create separate file
+for each line and write comprimed and base64 encoded data. To each data file
+create .header file with Sentry's authentication headers.
+
+------------
+
+Usage: log2sentry-prepare [options] PUBLIC-KEY:SECRET-KEY FILE [...]
+
+Options:
+  -h, --help         show this help message and exit
+  --preserve-backup  preserve temporary backup file
+  --prefix=PREFIX    use PREFIX for generated files [default is basename]
+
+------------
+
+EXAMPLE - prepare & send data:
+
+$ log2sentry-prepare --prefix _sentry 2101d44a41b3435c6bc08818ac76b733:58e9ca40b9bff65bb75dd1d84e939d6f logs.json
+$
+$ HEADERS=`python -c "fd = open('_sentry_20131104131305937894183.header');print ' '.join('-H \"' + header.strip() + '\"' for header in fd)"`
+$ DATA=`cat _sentry_20131104131305937894183.json`
+$ echo "curl $HEADERS -H \"Expect:\" -X POST -d $DATA http://sentry.local/api/store/" > send.sh
+$ bash send.sh
+{"id": "8eb228d450cd41e7ad59e8a6bd523b2e"}
+"""
+
+import base64
+import glob
+import os.path
+import shutil
+import sys
+import time
+import zlib
+from ConfigParser import ConfigParser
+from datetime import datetime
+from optparse import OptionParser
+
+
+def main():
+    try:
+        opts, keys, files = parse_args()
+
+        public_key, secret_key = parse_auth_keys(keys)
+
+        for file_pattern in files:
+            expanded = glob.glob(file_pattern)
+            logfiles = map(os.path.abspath, filter(is_json, expanded))
+
+            for logfile in logfiles:
+                try:
+                    temp_file, target_pattern = get_filenames(logfile, opts.prefix)
+                    shutil.move(logfile, temp_file)
+
+                    transcode_log(temp_file, target_pattern,
+                                  public_key, secret_key)
+
+                    if not opts.preserve:
+                        os.unlink(temp_file)
+                except IOError as e:
+                    print >>sys.stderr, str(e)
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        exit(1)
+
+def parse_args():
+    USAGE = '%prog [options] PUBLIC-KEY:SECRET-KEY FILE [...]'
+    parser = OptionParser(usage=USAGE)
+    parser.add_option('', '--preserve-backup', dest='preserve',
+                      action='store_true', default=False,
+                      help='preserve temporary backup file')
+    parser.add_option('', '--prefix', dest='prefix', metavar='PREFIX',
+                      help='use PREFIX for generated files [default is basename]')
+
+    opts, args = parser.parse_args()
+
+    if len(args) < 2:
+        parser.error('incorrect number of arguments')
+
+
+    if len(args[0].split(':')) != 2:
+        parser.error('incorrect format of keys')
+
+    return opts, args[0], args[1:]
+
+
+def get_config(path):
+    config = ConfigParser()
+    with open(path) as fd:
+        config.readfd(fd)
+    return config
+
+
+def parse_auth_keys(string):
+    return tuple(string.split(':'))
+
+
+def is_json(path):
+    if not os.path.isfile(path):
+        return False
+
+    _, ext = os.path.splitext(path)
+    return (ext == '.json')
+
+
+def get_filenames(path, prefix=None):
+    dir_path, file_name = os.path.split(path)
+    base, ext = os.path.splitext(file_name)
+    if prefix:
+        base = prefix
+
+    ts = timestamp()
+    temp_file = 'tmp_' + ts + ext
+    target_pattern = base + '_' + ts + '{0:000000}' + ext
+
+    return os.path.join(dir_path, temp_file), os.path.join(dir_path, target_pattern)
+
+
+def transcode_log(source_path, target_pattern, public_key, secret_key):
+    with open(source_path) as source:
+        for lineno, line in enumerate(source, start=1):
+            if not line.rstrip():
+                continue
+
+            target_file = target_pattern.format(lineno)
+
+            transcode(target_file, line)
+
+            generate_header_file(target_file, public_key, secret_key)
+
+
+def transcode(target_path, data):
+    transcoded = base64.b64encode(zlib.compress(data))
+
+    with open(target_path, 'w') as target:
+        target.write(transcoded)
+
+
+def generate_header_file(path, public_key, secret_key):
+    dir_path, file_name = os.path.split(path)
+    base, _ = os.path.splitext(file_name)
+    file_name = base + '.header'
+    header_path = os.path.join(dir_path, file_name)
+
+    pattern = '''User-Agent: {client}
+X-Sentry-Auth: Sentry sentry_timestamp={timestamp}, sentry_client={client}, sentry_version=2.0, sentry_key={public_key}, sentry_secret={secret_key}
+Content-Type: application/octet-stream'''
+
+    headers = pattern.format(client=get_client_ident(),
+                             timestamp=time.time(),
+                             public_key=public_key,
+                             secret_key=secret_key)
+
+    with open(header_path, 'w') as fd:
+        fd.write(headers)
+
+
+def timestamp():
+    return datetime.now().strftime('%Y%m%d%H%M%S%f')
+
+
+def get_client_ident():
+    try:
+        import log2sentry
+        version = log2sentry.VERSION
+    except (ImportError, AttributeError):
+        version = 'unknown'
+
+    return 'log2sentry/' + version
+
+
+if __name__ == '__main__':
+    main()

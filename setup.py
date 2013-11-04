@@ -8,6 +8,7 @@ setup(
     packages=['log2sentry',
               'log2sentry.raven',
               'log2sentry.raven.serializer'],
+    scripts=['scripts/log2sentry-prepare'],
     version='0.2',
     author='Jakub Matys',
     author_email='matys.jakub@gmail.com',
