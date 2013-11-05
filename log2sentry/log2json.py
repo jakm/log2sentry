@@ -11,9 +11,17 @@ import inspect
 import logging
 import uuid
 
+try:
+    import cjson
+    _encode = cjson.encode
+    _encodeError = cjson.EncodeError
+except ImportError:
+    import json
+    _encode = json.dumps
+    _encodeError = TypeError
+
 from .raven import (MAX_LENGTH_LIST, MAX_LENGTH_STRING,
-                   json, varmap, shorten,
-                   get_stack_info, iter_stack_frames)
+                   varmap, shorten, get_stack_info, iter_stack_frames)
 
 from socket import getfqdn
 
@@ -22,8 +30,8 @@ SENTRY_INTERFACES_EXCEPTION = 'sentry.interfaces.Exception'
 
 
 def _convert_to_json(sentry_data):
-    """Tries to convert data to json using Raven's json
-    serialiser. Everything in data should be serializable except
+    """Tries to convert data to json using cjson or cPython's json
+    module. Everything in data should be serializable except
     possibly the contents of
     sentry_data['sentry.interfaces.Exception']. If a serialisation
     error occurs, a new attempt is made without the exception info. If
@@ -31,13 +39,13 @@ def _convert_to_json(sentry_data):
     returned."""
 
     try:
-        return json.dumps(sentry_data)
-    except TypeError:
+        return _encode(sentry_data)
+    except _encodeError:
         # try again without exception info
         sentry_data.pop(SENTRY_INTERFACES_EXCEPTION, None)
         try:
-            return json.dumps(sentry_data)
-        except TypeError:
+            return _encode(sentry_data)
+        except _encodeError:
             pass
 
         # give up
