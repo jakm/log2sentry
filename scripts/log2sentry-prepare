@@ -62,6 +62,8 @@ def main():
                         os.unlink(temp_file)
                 except IOError as e:
                     print >>sys.stderr, str(e)
+                except EnvironmentError: # OSError, shutil.Error
+                    pass
 
     except Exception:
         import traceback
