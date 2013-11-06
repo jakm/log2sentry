@@ -14,6 +14,7 @@ Options:
   --preserve-backup  preserve temporary backup file
   --prefix=PREFIX    use PREFIX for generated files [default is basename]
   --out-dir=DIR      use DIR as working and target directory
+  --use-tmp-dir      use temporary directory as working directory
 
 ------------
 
@@ -29,10 +30,12 @@ $ bash send.sh
 """
 
 import base64
+import collections
 import glob
 import os.path
 import shutil
 import sys
+import tempfile
 import time
 import zlib
 from ConfigParser import ConfigParser
@@ -52,14 +55,20 @@ def main():
 
             for logfile in logfiles:
                 try:
-                    temp_file, target_pattern = get_filenames(logfile, opts)
-                    shutil.move(logfile, temp_file)
+                    paths = get_paths(logfile, opts)
 
-                    transcode_log(temp_file, target_pattern,
-                                  public_key, secret_key)
+                    os.mkdir(paths.workdir)
+                    shutil.move(logfile, paths.temp_file)
 
-                    if not opts.preserve:
-                        os.unlink(temp_file)
+                    transcode_log(paths, public_key, secret_key)
+
+                    shutil.move(paths.workdir, paths.outdir)
+
+                    if not opts.preserve_backup:
+                        os.unlink(paths.temp_file)
+
+                        if paths.tempdir:
+                            os.rmdir(paths.tempdir)
                 except IOError as e:
                     print >>sys.stderr, str(e)
                 except EnvironmentError: # OSError, shutil.Error
@@ -73,13 +82,16 @@ def main():
 def parse_args():
     USAGE = '%prog [options] PUBLIC-KEY:SECRET-KEY FILE [...]'
     parser = OptionParser(usage=USAGE)
-    parser.add_option('', '--preserve-backup', dest='preserve',
+    parser.add_option('', '--preserve-backup', dest='preserve_backup',
                       action='store_true', default=False,
                       help='preserve temporary backup file')
     parser.add_option('', '--prefix', dest='prefix', metavar='PREFIX',
                       help='use PREFIX for generated files [default is basename]')
     parser.add_option('', '--out-dir', dest='out_dir', metavar='DIR',
                       help='use DIR as working and target directory')
+    parser.add_option('', '--use-tmp-dir', dest='use_tmp_dir',
+                      action='store_true', default=False,
+                      help='use temporary directory as working directory')
 
     opts, args = parser.parse_args()
 
@@ -112,30 +124,66 @@ def is_json(path):
     return (ext == '.json')
 
 
-def get_filenames(path, opts=None):
+def get_paths(path, opts=None):
+    ts = timestamp()
+
+    tempdir_path, workdir_path, outdir_path = get_spec_dir_paths(path, opts)
+
+    workdir_with_ts_path = os.path.join(workdir_path, ts)
+    outdir_with_ts_path = os.path.join(outdir_path, ts)
+
+    temp_file, target_file_pattern = get_filenames(path, opts, ts)
+
+    # use workdir_path - don't mix tempfile with products
+    temp_file_path = os.path.join(workdir_path, temp_file)
+
+    target_file_path_pattern = os.path.join(workdir_with_ts_path, target_file_pattern)
+
+    Paths = collections.namedtuple('Paths',
+                ('tempdir', 'workdir', 'outdir',
+                 'temp_file', 'target_file_pattern'))
+
+    return Paths(tempdir_path, workdir_with_ts_path, outdir_with_ts_path,
+                 temp_file_path, target_file_path_pattern)
+
+
+def get_spec_dir_paths(path, opts):
+    tempdir_path = None
+
+    dir_path, _ = os.path.split(path)
+
+    outdir_path = dir_path
+    if opts and opts.out_dir:
+        outdir_path = os.path.abspath(opts.out_dir)
+
+    workdir_path = outdir_path
+    if opts and opts.use_tmp_dir:
+        tempdir_path = tempfile.mkdtemp()
+        workdir_path = tempdir_path
+
+    return tempdir_path, workdir_path, outdir_path
+
+
+def get_filenames(path, opts, ts):
     dir_path, file_name = os.path.split(path)
     base, ext = os.path.splitext(file_name)
 
     if opts and opts.prefix:
         base = opts.prefix
 
-    if opts and opts.out_dir:
-        dir_path = os.path.abspath(opts.out_dir)
-
-    ts = timestamp()
     temp_file = 'tmp_' + ts + ext
-    target_pattern = base + '_' + ts + '{0:000000}' + ext
+    target_file_pattern = base + '_' + ts + '{0:000000}' + ext
 
-    return os.path.join(dir_path, temp_file), os.path.join(dir_path, target_pattern)
+    return temp_file, target_file_pattern
 
 
-def transcode_log(source_path, target_pattern, public_key, secret_key):
-    with open(source_path) as source:
+def transcode_log(paths, public_key, secret_key):
+    with open(paths.temp_file) as source:
         for lineno, line in enumerate(source, start=1):
             if not line.rstrip():
                 continue
 
-            target_file = target_pattern.format(lineno)
+            target_file = paths.target_file_pattern.format(lineno)
 
             transcode(target_file, line)
 
