@@ -57,7 +57,7 @@ def main():
                 try:
                     paths = get_paths(logfile, opts)
 
-                    os.mkdir(paths.workdir)
+                    mkdir(paths.workdir)
                     shutil.move(logfile, paths.temp_file)
 
                     transcode_log(paths, public_key, secret_key)
@@ -175,6 +175,12 @@ def get_filenames(path, opts, ts):
     target_file_pattern = base + '_' + ts + '{0:000000}' + ext
 
     return temp_file, target_file_pattern
+
+
+def mkdir(path):
+    oldmask = os.umask(0)
+    os.mkdir(path)
+    os.umask(oldmask)
 
 
 def transcode_log(paths, public_key, secret_key):
