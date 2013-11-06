@@ -9,7 +9,7 @@ setup(
               'log2sentry.raven',
               'log2sentry.raven.serializer'],
     scripts=['scripts/log2sentry-prepare'],
-    version='0.5',
+    version='0.6',
     author='Jakub Matys',
     author_email='matys.jakub@gmail.com',
     url='https://github.com/jakm/log2sentry',
